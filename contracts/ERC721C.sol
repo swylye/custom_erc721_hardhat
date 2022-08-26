@@ -5,6 +5,17 @@ pragma solidity ^0.8.4;
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import "./OwnableExt.sol";
 
+// Errors
+error ERC721C__TokenIdDoesNotExist();
+error ERC721C__InvalidAddress();
+error ERC721C__IndexOverflow();
+error ERC721C__InvalidFromAddress();
+error ERC721C__Unauthorized();
+error ERC721C__NonErc721RReceiver();
+error ERC721C__IndexExceedAddressBalance();
+error ERC721C__NotTokenOwner();
+error ERC721C__InvalidMintAmount();
+
 abstract contract ERC721C is OwnableExt {
     /*///////////////////////////////////////////////////////////////
                                  ERC721 VARIABLES
@@ -38,7 +49,9 @@ abstract contract ERC721C is OwnableExt {
     //////////////////////////////////////////////////////////////*/
 
     modifier tokenExists(uint256 _tokenId) {
-        require(_exists(_tokenId), "TOKENID_DOES_NOT_EXIST");
+        if (!_exists(_tokenId)) {
+            revert ERC721C__TokenIdDoesNotExist();
+        }
         _;
     }
 
@@ -118,7 +131,9 @@ abstract contract ERC721C is OwnableExt {
     }
 
     function balanceOf(address _owner) public view virtual returns (uint256) {
-        require(_owner != address(0), "INVALID_ADDRESS");
+        if (_owner == address(0)) {
+            revert ERC721C__InvalidAddress();
+        }
         uint256 count;
         uint256 supply = _owners.length;
         // Cannot realistically overflow, since we are using uint256
@@ -133,8 +148,9 @@ abstract contract ERC721C is OwnableExt {
     }
 
     function ownerOf(uint256 _tokenId) public view virtual returns (address) {
-        require(_tokenId < _owners.length, "INDEX_EXCEED_BALANCE");
-        // require(_owners[_tokenId] != address(1), "TOKEN_BURNT");
+        if (_tokenId >= _owners.length) {
+            revert ERC721C__IndexOverflow();
+        }
         // Cannot realistically overflow, since we are using uint256
         unchecked {
             for (_tokenId; ; _tokenId++) {
@@ -150,11 +166,15 @@ abstract contract ERC721C is OwnableExt {
         address _to,
         uint256 _tokenId
     ) public virtual tokenExists(_tokenId) {
-        require(_from == ownerOf(_tokenId), "INVALID_FROM_ADDRESS");
+        if (_from != ownerOf(_tokenId)) {
+            revert ERC721C__InvalidFromAddress();
+        }
         bool ownerOrApproved = (msg.sender == _from ||
             msg.sender == _tokenApprovals[_tokenId] ||
             _operatorApprovals[_from][msg.sender]);
-        require(ownerOrApproved, "NO_TRANSFER_PERMISSION");
+        if (!ownerOrApproved) {
+            revert ERC721C__Unauthorized();
+        }
 
         // delete previous owner's token approval
         delete _tokenApprovals[_tokenId];
@@ -173,7 +193,9 @@ abstract contract ERC721C is OwnableExt {
         uint256 _tokenId,
         bytes memory _data
     ) public virtual {
-        require(_checkOnERC721Received(_from, _to, _tokenId, _data), "NON_ERC721_RECEIVER");
+        if (!_checkOnERC721Received(_from, _to, _tokenId, _data)) {
+            revert ERC721C__NonErc721RReceiver();
+        }
         transferFrom(_from, _to, _tokenId);
     }
 
@@ -198,7 +220,9 @@ abstract contract ERC721C is OwnableExt {
         ) {
             return retval == IERC721Receiver(_to).onERC721Received.selector;
         } catch (bytes memory reason) {
-            require(reason.length > 0, "NON_ERC721_RECEIVER");
+            if (reason.length == 0) {
+                revert ERC721C__NonErc721RReceiver();
+            }
             assembly {
                 revert(add(32, reason), mload(reason))
             }
@@ -214,7 +238,9 @@ abstract contract ERC721C is OwnableExt {
     }
 
     function tokenByIndex(uint256 _index) external view virtual returns (uint256) {
-        require(_index < _owners.length - _getBurntCount(), "INVALID_INDEX");
+        if (_index >= (_owners.length - _getBurntCount())) {
+            revert ERC721C__IndexOverflow();
+        }
         return _index + _getBurntCountBeforeIndex(_index);
     }
 
@@ -224,7 +250,9 @@ abstract contract ERC721C is OwnableExt {
         virtual
         returns (uint256 tokenId)
     {
-        require(_index < balanceOf(_owner), "INDEX_EXCEEDS_BALANCE");
+        if (_index >= balanceOf(_owner)) {
+            revert ERC721C__IndexExceedAddressBalance();
+        }
         uint256 count;
         uint256 supply = _owners.length;
 
@@ -247,7 +275,9 @@ abstract contract ERC721C is OwnableExt {
     //////////////////////////////////////////////////////////////*/
 
     function approve(address _approved, uint256 _tokenId) external virtual {
-        require(ownerOf(_tokenId) == msg.sender, "NOT_TOKEN_OWNER");
+        if (msg.sender != ownerOf(_tokenId)) {
+            revert ERC721C__NotTokenOwner();
+        }
         _tokenApprovals[_tokenId] = _approved;
         emit Approval(msg.sender, _approved, _tokenId);
     }
@@ -283,16 +313,16 @@ abstract contract ERC721C is OwnableExt {
         uint256 _amount,
         bytes memory _data
     ) internal virtual {
-        require(
-            _checkOnERC721Received(address(0), _to, _owners.length - 1, _data),
-            "NON_ERC721_RECEIVER"
-        );
+        if (!_checkOnERC721Received(address(0), _to, _owners.length - 1, _data)) {
+            revert ERC721C__NonErc721RReceiver();
+        }
         _mint(_to, _amount);
     }
 
     function _mint(address _to, uint256 _amount) internal virtual {
-        require(_to != address(0), "INVALID_ADDRESS");
-        require(_amount > 0, "INVALID_MINT_AMOUNT");
+        if (_amount == 0) {
+            revert ERC721C__InvalidMintAmount();
+        }
 
         uint256 _currentIndex = _owners.length;
 
@@ -337,7 +367,9 @@ abstract contract ERC721C is OwnableExt {
         returns (uint256 burnCount)
     {
         uint256 supply = _owners.length;
-        require(_index < supply, "INVALID_INDEX");
+        if (_index >= supply) {
+            revert ERC721C__IndexOverflow();
+        }
         for (uint256 i; i <= _index; i++) {
             if (_owners[i] == address(1)) {
                 burnCount += 1;

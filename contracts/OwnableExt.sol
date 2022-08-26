@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.7;
+
+error Ownable__NotOwner();
+error Ownable__NotNominee();
+error Ownable__IncorrectPassword();
+error Ownable__InvalidAddress();
 
 abstract contract OwnableExt {
     address private _owner;
@@ -36,7 +41,9 @@ abstract contract OwnableExt {
      * @dev Throws if the sender is not the owner.
      */
     function _checkOwner() internal view virtual {
-        require(owner() == msg.sender, "NOT_OWNER");
+        if (owner() != msg.sender) {
+            revert Ownable__NotOwner();
+        }
     }
 
     /**
@@ -55,12 +62,13 @@ abstract contract OwnableExt {
     // - nominee then accepts the nomination by calling acceptNomination which results in the transfer of ownership
     // Safer way of transferring ownership (in case of transferring to the wrong address directly)
     function nominateNewOwner(address _nomineeAdd) external virtual onlyOwner {
-        require(_nomineeAdd != address(0), "INVALID_ADDRESS");
         _nominee = _nomineeAdd;
     }
 
     function acceptNomination() external virtual {
-        require(_nominee == msg.sender, "NOT_NOMINEE");
+        if (msg.sender != _nominee) {
+            revert Ownable__NotNominee();
+        }
         _nominee = address(0);
         _transferOwnership(msg.sender);
     }
@@ -73,13 +81,16 @@ abstract contract OwnableExt {
         virtual
         onlyOwner
     {
-        require(_nomineeAdd != address(0), "INVALID_ADDRESS");
         nomineeToHash[_nomineeAdd] = _hashedString;
     }
 
     function acceptNominationPW(string memory _password) external virtual {
-        require(nomineeToHash[msg.sender] != 0, "NOT_NOMINEE");
-        require(hashString(_password) == nomineeToHash[msg.sender], "INCORRECT_PASSWORD");
+        if (msg.sender != _nominee) {
+            revert Ownable__NotNominee();
+        }
+        if (hashString(_password) != nomineeToHash[msg.sender]) {
+            revert Ownable__IncorrectPassword();
+        }
         delete nomineeToHash[msg.sender];
         _transferOwnership(msg.sender);
     }
@@ -93,7 +104,9 @@ abstract contract OwnableExt {
      * Can only be called by the current owner.
      */
     function transferOwnership(address _newOwner) external virtual onlyOwner {
-        require(_newOwner != address(0), "INVALID_ADDRESS");
+        if (_newOwner == address(0)) {
+            revert Ownable__InvalidAddress();
+        }
         _transferOwnership(_newOwner);
     }
 
